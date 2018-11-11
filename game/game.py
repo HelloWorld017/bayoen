@@ -47,17 +47,22 @@ class Drop(object):
     def __init__(self, game):
         self.game = game
         self.dropping_piece = None
-        self.create_bag()
         self.drop_tick = 0
+        self.current_bag = None
+        self.next_bag = None
+        self.create_bag()
+        self.create_bag()
 
     def create_bag(self):
-        self.randomizer = [MinoL, MinoJ, MinoS, MinoZ, MinoT, MinoI, MinoO]
-        shuffle(self.randomizer)
+        self.current_bag = self.next_bag
+        self.next_bag = [MinoL, MinoJ, MinoS, MinoZ, MinoT, MinoI, MinoO]
+        shuffle(self.current_bag)
 
     def new_piece(self):
-        piece = self.randomizer.pop()
+        NewPiece = self.current_bag.pop(0)
+        piece = NewPiece()
 
-        if len(self.randomizer) == 0:
+        if len(self.current_bag) == 0:
             self.create_bag()
 
         if not piece.is_placeable:
@@ -75,6 +80,16 @@ class Drop(object):
 
         if self.drop_tick > self.game.configuration['drop'][key]['frame']:
             self.dropping_piece.drop(self.game.configuration['drop'][key]['amount'])
+
+    @property
+    def next_n_piece(self, n):
+        amount = min(7, n)
+        slice_one = self.current_bag[:amount]
+
+        left_amount = amount - len(slice_one)
+        slice_two = self.next_bag[:left_amount]
+
+        return slice_one + slice_two
 
 class Hold(object):
     def __init__(self, game):
@@ -147,8 +162,7 @@ class Tetris(object):
             self.playfield = self.playfield + [[None] * 10] * (40 - len(self.playfield))
 
         self.drop_piece()
-
-        return score
+        self.emit('clear', score)
 
     def calc_score(self, clear_target):
         pass
