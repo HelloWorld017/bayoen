@@ -1,6 +1,31 @@
 from utils import reverse, transpose
 
 class Mino(object):
+    color = 'black'
+    shape = (
+        (0, 0, 0),
+        (0, 0, 0),
+        (0, 0, 0)
+    )
+    name = ''
+    srs_table = {
+        '01': ((0, 0), ),
+        '10': ((0, 0), ),
+        '12': ((0, 0), ),
+        '21': ((0, 0), ),
+        '23': ((0, 0), ),
+        '32': ((0, 0), ),
+        '30': ((0, 0), ),
+        '03': ((0, 0), )
+    }
+
+    rotation_to_vector = {
+        0: (0, 1),
+        1: (1, 0),
+        2: (0, -1),
+        3: (-1, 0)
+    }
+
     def __init__(self, game):
         self.game = game
         self.x = 3
@@ -15,36 +40,10 @@ class Mino(object):
         }
 
         self.last_successful_movement = None
+        self.last_rotation_info = None
         self.phase = 'drop'
         self.locking_start = 0
         self.tick = 0
-
-    # /// Begin Piece Properties ///
-    @property
-    def color(self):
-        return (0, 0, 0)
-
-    @property
-    def shape(self):
-        return (
-            (0, 0, 0),
-            (0, 0, 0),
-            (0, 0, 0)
-        )
-
-    @property
-    def srs_table(self):
-        return {
-            '01': ((0, 0), ),
-            '10': ((0, 0), ),
-            '12': ((0, 0), ),
-            '21': ((0, 0), ),
-            '23': ((0, 0), ),
-            '32': ((0, 0), ),
-            '30': ((0, 0), ),
-            '03': ((0, 0), )
-        }
-    # /// End Piece Properties ///
 
     def placeable(self, x, y, rotation):
         shape = self.shape_cache[rotation]
@@ -96,6 +95,7 @@ class Mino(object):
         new_rotation = (self.rotation + direction + 4) % 4
         rotation_code = "%d%d" % (self.rotation, new_rotation)
         movement_success = False
+        rotation_info = (0, 0)
 
         for x, y in srs_table[rotation_code]:
             if self.placeable(self.x + x, self.y + y, new_rotation):
@@ -103,11 +103,14 @@ class Mino(object):
                 self.rotation = new_rotation
                 self.x += x
                 self.y += y
+
+                rotation_info = (x, y)
                 break
 
         if not movement_success:
             return False
 
+        self.last_rotation_info = rotation_info
         self.last_successful_movement = 'rotate'
         return True
 
