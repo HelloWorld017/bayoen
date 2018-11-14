@@ -1,12 +1,22 @@
 from utils import random_id, rotate_cw
 
+
+class Tile(object):
+    def __init__(self, texture, mino):
+        self.texture = texture
+        self.mino = mino
+        self.rotation = self.mino.rotation * 90
+
+
 class Mino(object):
-    color = 'black'
+    tiles = {}
     shape = (
         (0, 0, 0),
         (0, 0, 0),
         (0, 0, 0)
     )
+    view_xoffset = 0
+    view_yoffset = 0
     name = ''
     srs_table = {
         '01': ((0, 0), ),
@@ -42,6 +52,7 @@ class Mino(object):
         self.phase = 'drop'
         self.locking_start = 0
         self.tick = 0
+        self.move_counter = 0
         self.id = random_id()
 
     def placeable(self, x, y, rotation):
@@ -88,6 +99,16 @@ class Mino(object):
     def size(self):
         return len(self.shape)
 
+    def add_move_counter(self):
+        if self.phase == 'locking':
+            self.locking_start = self.tick
+            self.move_counter += 1
+
+        if self.move_counter > 15:
+            return False
+
+        return True
+
     # /// Begin Rotation ///
     def rotate(self, direction=1):
         new_rotation = (self.rotation + direction + 4) % 4
@@ -110,6 +131,10 @@ class Mino(object):
 
         self.last_rotation_info = rotation_info
         self.last_successful_movement = 'rotate'
+
+        if not self.add_move_counter():
+            self.on_locked()
+
         return True
 
     def rotate_left(self):
@@ -157,6 +182,9 @@ class Mino(object):
             self.last_successful_movement = 'move'
             self.x += x
 
+            if not self.add_move_counter():
+                self.on_locked()
+
     def move_left(self):
         return self.move(-1)
 
@@ -170,8 +198,11 @@ class Mino(object):
         self.game.on_locked()
 
     def is_position_mino(self, x, y):
-        dx = x - self.x
-        dy = self.y - y
+        return self.is_position_mino_translate(x, y, self.x, self.y)
+
+    def is_position_mino_translate(self, x, y, px, py):
+        dx = x - px
+        dy = py - y
 
         if dx < 0 or dx >= self.size:
             return False
@@ -179,7 +210,19 @@ class Mino(object):
         if dy < 0 or dy >= self.size:
             return False
 
-        return self.rotation_shape[dy][dx] == 1
+        return self.rotation_shape[dy][dx] != 0
+
+    def get_position_tile(self, x, y):
+        return self.get_position_tile_translate(x, y, self.x, self.y)
+
+    def get_position_tile_translate(self, x, y, px, py):
+        dx = x - px
+        dy = py - y
+
+        return Tile("%s:%d" % (self.name, self.rotation_shape[dy][dx]), self)
+
+    def get_tile(self, shape_no):
+        return Tile("%s:%d" % (self.name, shape_no), self)
 
     def update(self):
         self.tick += 1

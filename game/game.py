@@ -132,7 +132,6 @@ class Drop(object):
             self.dropping_piece.drop(self.game.configuration['drop'][key]['amount'])
             self.drop_tick = 0
 
-    @property
     def next_n_piece(self, n):
         amount = min(7, n)
         slice_one = self.current_bag[:amount]
@@ -183,7 +182,7 @@ class ScoreCalc(object):
 
         # T-Spin
         is_tspin = False
-        if_mini = True
+        is_mini = True
         if piece.last_successful_movement == 'rotate' and piece.name == 't':
             center_x = piece.x + 1
             center_y = piece.y - 1
@@ -254,7 +253,7 @@ class ScoreCalc(object):
             damage += 1
 
         # Combo Damage
-        if self.combo > 0:
+        if self.combo > 0 and len(clear_target) > 0:
             if self.combo <= 10:
                 damage += self.combo_damage[self.combo]
 
@@ -272,12 +271,12 @@ class ScoreCalc(object):
         if is_perfect:
             damage = 10
 
-        return damage, " ".join(text)
+        return damage, text
 
 
 @event_emitter
 class Tetris(object):
-    def __init__(self, configuration={}):
+    def __init__(self, name='Player 1', configuration={}):
         self.playfield = list([[None] * 10 for i in range(40)])
         self.configuration = merge_dict(default_configuration, configuration)
         self.controller = Controller(self)
@@ -285,7 +284,7 @@ class Tetris(object):
         self.hold = Hold(self)
         self.calc = ScoreCalc(self)
         self.visualizer = None
-        self.last_clear = None
+        self.last_clear = []
         self.opponent = None
         self.garbage_amount = 0
 
@@ -300,7 +299,9 @@ class Tetris(object):
     def playfield_dropping(self):
         return [
             [
-                self.curr_piece if self.curr_piece.is_position_mino(x, y) else self.playfield[y][x]
+                self.curr_piece.get_position_tile(x, y)
+                if self.curr_piece.is_position_mino(x, y)
+                else self.playfield[y][x]
                 for x in range(10)
             ]
             for y in range(40)
@@ -334,8 +335,9 @@ class Tetris(object):
     def on_locked(self):
         for y in range(self.curr_piece.size):
             for x in range(self.curr_piece.size):
-                if self.curr_piece.rotation_shape[y][x] == 1:
-                    self.playfield[self.curr_piece.y - y][self.curr_piece.x + x] = self.curr_piece
+                texture_id = self.curr_piece.rotation_shape[y][x]
+                if texture_id != 0:
+                    self.playfield[self.curr_piece.y - y][self.curr_piece.x + x] = self.curr_piece.get_tile(texture_id)
 
         clear_target = []
         for y in range(40):
@@ -381,7 +383,11 @@ class Tetris(object):
         garbage_lines = []
 
         for i in range(self.garbage_amount):
-            garbage_lines.append(shuffle([MinoGarbage(self) for i in range(9)] + [None]))
+            tile = MinoGarbage(self).get_tile(1)
+            garbage_row = [tile for j in range(9)] + [None]
+            shuffle(garbage_row)
+
+            garbage_lines.append(garbage_row)
 
         cutting_line = 40 - self.garbage_amount
 
@@ -392,3 +398,5 @@ class Tetris(object):
             for mino in rest_lines:
                 if mino is not None:
                     self.game_over()
+
+        self.garbage_amount = 0

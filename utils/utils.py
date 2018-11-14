@@ -2,6 +2,8 @@ from binascii import b2a_hex
 from os import urandom
 from time import time
 
+import math
+
 def now():
     return int(time() * 1000)
 
@@ -54,3 +56,20 @@ def event_emitter(cls):
 
 def random_id():
     return b2a_hex(urandom(15))
+
+def ease(ease_function, time, start, dest, duration, time_start=0, time_limit=True):
+    time -= time_start
+    time = max(0, time)
+
+    change = dest - start
+
+    if time_limit:
+        time = min(time, duration)
+
+    return ease_function(time, start, change, duration)
+
+def ease_exp_in(t, b, c, d):
+    return c * pow(2, 10 * (t / d - 1)) + b
+
+def ease_sin_in_out(t, b, c, d):
+    return - c / 2 * (math.cos(math.pi * t / d) - 1) + b

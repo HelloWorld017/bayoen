@@ -8,7 +8,13 @@ def start_game():
     pygame.init()
 
     game = Tetris()
+    opponent = Tetris()
+
     game.start_game()
+    game.connect_opponent(opponent)
+
+    opponent.start_game()
+    opponent.connect_opponent(game)
 
     screen = display.set_mode((1280, 720), pg_locals.DOUBLEBUF)
     display.set_caption('NenwTris')
@@ -42,4 +48,5 @@ def start_game():
                     game.controller.keyup(key_mapping[ev.key])
 
         game.update()
+        opponent.update()
         clock.tick(60)
