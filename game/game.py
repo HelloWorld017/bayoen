@@ -1,4 +1,4 @@
-from game.mino import get_mino, minos
+from game.mino import get_mino, minos, MinoGarbage
 from game.visualizer import Visualizer
 from random import shuffle
 from utils import event_emitter, merge_dict, now
@@ -35,7 +35,7 @@ class Controller(object):
 
     def __init__(self, game):
         self.game = game
-        self.pressed_keys = []
+        self.pressed_keys = {}
         self.tick = 0
 
     def keydown(self, key_name):
@@ -69,10 +69,12 @@ class Controller(object):
             if key not in self.pressed_keys or not self.pressed_keys[key][0]:
                 continue
 
-            if self.pressed_keys[key][1] < self.game.configuration['das']['start']:
+            elapsed_delay = self.tick - self.pressed_keys[key][1]
+
+            if elapsed_delay < self.game.configuration['das']['start']:
                 continue
 
-            if self.pressed_keys[key][1] % self.game.configuration['das']['preiod'] == 0:
+            if elapsed_delay % self.game.configuration['das']['period'] == 0:
                 if key == self.key_left:
                     self.game.curr_piece.move_left()
 
@@ -89,7 +91,7 @@ class Drop(object):
         self.dropping_piece = None
         self.drop_tick = 0
         self.current_bag = None
-        self.next_bag = None
+        self.next_bag = []
         self.create_bag()
         self.create_bag()
 
@@ -105,7 +107,7 @@ class Drop(object):
         else:
             NewPiece = self.current_bag.pop(0)
 
-        piece = NewPiece()
+        piece = NewPiece(self.game)
 
         if len(self.current_bag) == 0:
             self.create_bag()
@@ -128,6 +130,7 @@ class Drop(object):
 
         if self.drop_tick > self.game.configuration['drop'][key]['frame']:
             self.dropping_piece.drop(self.game.configuration['drop'][key]['amount'])
+            self.drop_tick = 0
 
     @property
     def next_n_piece(self, n):
@@ -145,19 +148,19 @@ class Hold(object):
         self.holding_piece = None
         self.is_last_hold = False
 
-        self.game.on('drop', lambda: self.on_drop())
+        self.game.on('drop', lambda payload: self.on_drop())
 
-    def hold():
+    def hold(self):
         if self.is_last_hold:
             return
 
         original_holding = self.holding_piece
         self.holding_piece = self.game.curr_piece.name
-        self.drop_piece(original_holding, broadcast=False)
+        self.game.drop_piece(original_holding, broadcast=False)
 
         self.is_last_hold = True
 
-    def on_drop():
+    def on_drop(self):
         self.is_last_hold = False
 
 class ScoreCalc(object):
@@ -179,6 +182,8 @@ class ScoreCalc(object):
         self.b2b = False
 
         # T-Spin
+        is_tspin = False
+        if_mini = True
         if piece.last_successful_movement == 'rotate' and piece.name == 't':
             center_x = piece.x + 1
             center_y = piece.y - 1
@@ -193,31 +198,31 @@ class ScoreCalc(object):
                         corners += 1
 
             if corners >= 3:
-                is_mini = True
-
                 lri = piece.last_rotation_info
 
                 if lri[1] == -2 and lri[0] != 0:
                     is_mini = False
 
-                rotation_vector = rotation_to_vector[piece.rotation]
+                rotation_vector = piece.rotation_to_vector[piece.rotation]
                 normal_vector = (rotation_vector[1], rotation_vector[0])
                 rotate_center = (center_x + rotation_vector[0], center_y + rotation_vector[1])
 
                 diag1 = (rotate_center[0] + normal_vector[0], rotate_center[1] + normal_vector[1])
-                diag2 = (rotate_center[0] + normal_vector[0] * -1, rotate_center[1] + normal_vector * -1)
+                diag2 = (rotate_center[0] + normal_vector[0] * -1, rotate_center[1] + normal_vector[1] * -1)
 
                 if self.game.is_filled(diag1[0], diag1[1]) and self.game.is_filled(diag2[0], diag2[1]):
                     is_mini = False
 
+                text.append('T-Spin')
+
                 if not is_mini:
                     damage += 1 + len(clear_target)
-                    text.append('T-Spin')
 
                 else:
-                    text.append('T-Spin Mini')
+                    text.append('Mini')
 
-                self.b2b = True
+                if len(clear_target) > 0:
+                    self.b2b = True
 
         # Default damage
         if len(clear_target) > 0:
@@ -237,17 +242,16 @@ class ScoreCalc(object):
                 continue
 
             for x in range(10):
-                if self.playfield[y][x] is not None:
+                if self.game.playfield[y][x] is not None:
                     is_perfect = False
 
         if is_perfect:
-            damage += 10
-
             text.append("Perfect Clear")
 
         # Back to Back
-        if last_b2b:
+        if last_b2b and len(clear_target) > 0:
             text.append("Back-to-Back")
+            damage += 1
 
         # Combo Damage
         if self.combo > 0:
@@ -265,13 +269,16 @@ class ScoreCalc(object):
         else:
             self.combo = 0
 
+        if is_perfect:
+            damage = 10
+
         return damage, " ".join(text)
 
 
 @event_emitter
 class Tetris(object):
-    def __init__(self, configuration):
-        self.playfield = [[None] * 10] * 40
+    def __init__(self, configuration={}):
+        self.playfield = list([[None] * 10 for i in range(40)])
         self.configuration = merge_dict(default_configuration, configuration)
         self.controller = Controller(self)
         self.drop = Drop(self)
@@ -279,6 +286,11 @@ class Tetris(object):
         self.calc = ScoreCalc(self)
         self.visualizer = None
         self.last_clear = None
+        self.opponent = None
+        self.garbage_amount = 0
+
+    def start_game(self):
+        self.drop_piece()
 
     @property
     def curr_piece(self):
@@ -287,7 +299,10 @@ class Tetris(object):
     @property
     def playfield_dropping(self):
         return [
-            [self.curr_piece if self.curr_piece.is_position_mino(x, y) else self.playfield[y][x] for x in range(10)]
+            [
+                self.curr_piece if self.curr_piece.is_position_mino(x, y) else self.playfield[y][x]
+                for x in range(10)
+            ]
             for y in range(40)
         ]
 
@@ -308,25 +323,25 @@ class Tetris(object):
         self.controller.update()
 
         if self.visualizer is not None:
-            self.visualizer.visualize()
+            self.visualizer.update()
 
-    def drop_piece(self):
-        self.drop.new_piece()
+    def drop_piece(self, *args, **kwargs):
+        self.drop.new_piece(*args, **kwargs)
 
-    def visualize(self):
-        self.visualizer = Visualizer(self)
+    def visualize(self, screen):
+        self.visualizer = Visualizer(self, screen)
 
     def on_locked(self):
         for y in range(self.curr_piece.size):
             for x in range(self.curr_piece.size):
                 if self.curr_piece.rotation_shape[y][x] == 1:
-                    self.playfield[y + self.curr_piece.y][x + self.curr_piece.x] = self.curr_piece
+                    self.playfield[self.curr_piece.y - y][self.curr_piece.x + x] = self.curr_piece
 
         clear_target = []
         for y in range(40):
             clear = True
 
-            for x in self.playfield[y]:
+            for x in range(10):
                 if self.playfield[y][x] is None:
                     clear = False
 
@@ -339,11 +354,41 @@ class Tetris(object):
         for y, row in clear_target:
             self.playfield[y] = None
 
-        self.playfield = list([row if row is not None for row in self.playfield])
-        self.playfield = self.playfield + [[None] * 10] * (40 - len(self.playfield))
+        self.playfield = list([row for row in self.playfield if row is not None])
+        self.playfield = self.playfield + list([[None] * 10 for i in range(40 - len(self.playfield))])
 
         self.drop_piece()
         self.emit('clear', score)
 
+        if self.opponent is not None:
+            self.garbage_amount -= score
+            if self.garbage_amount < 0:
+                self.opponent.after_fill_garbage(-self.garbage_amount)
+                self.garbage_amount = 0
+
+            self.fill_garbage()
+
     def game_over(self):
         self.emit('gameover')
+
+    def connect_opponent(self, game):
+        self.opponent = game
+
+    def after_fill_garbage(self, garbage_amount):
+        self.garbage_amount += garbage_amount
+
+    def fill_garbage(self):
+        garbage_lines = []
+
+        for i in range(self.garbage_amount):
+            garbage_lines.append(shuffle([MinoGarbage(self) for i in range(9)] + [None]))
+
+        cutting_line = 40 - self.garbage_amount
+
+        rest_lines = self.playfield[cutting_line:]
+        self.playfield = garbage_lines + self.playfield[:cutting_line]
+
+        for row in rest_lines:
+            for mino in rest_lines:
+                if mino is not None:
+                    self.game_over()

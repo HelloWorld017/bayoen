@@ -1,3 +1,5 @@
+from binascii import b2a_hex
+from os import urandom
 from time import time
 
 def now():
@@ -6,8 +8,11 @@ def now():
 def transpose(matrix):
     return tuple([tuple([row[i] for row in matrix]) for i in range(len(matrix[0]))])
 
-def reverse(matrix):
-    return tuple([tuple(row[::-1]) for row in matrix])
+def reverse_row(matrix):
+    return tuple(matrix[::-1])
+
+def rotate_cw(matrix):
+    return reverse_row(transpose(matrix))
 
 def merge_dict(*dicts):
     base_dict = {}
@@ -44,3 +49,8 @@ def event_emitter(cls):
 
     cls.on = on
     cls.emit = emit
+
+    return cls
+
+def random_id():
+    return b2a_hex(urandom(15))

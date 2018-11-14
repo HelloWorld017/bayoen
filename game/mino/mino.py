@@ -1,4 +1,4 @@
-from utils import reverse, transpose
+from utils import random_id, rotate_cw
 
 class Mino(object):
     color = 'black'
@@ -32,32 +32,30 @@ class Mino(object):
         self.y = 21
         self.rotation = 0
 
-        self.shape_cache = {
-            0: self.shape,
-            1: reverse(transpose(self.shape)),
-            2: reverse(self.shape),
-            3: transpose(self.shape)
-        }
+        self.shape_cache = {}
+        self.shape_cache[0] =  self.shape
+        for i in range(3)[::-1]:
+            self.shape_cache[i + 1] = rotate_cw(self.shape_cache[(i + 2) % 4])
 
         self.last_successful_movement = None
         self.last_rotation_info = None
         self.phase = 'drop'
         self.locking_start = 0
         self.tick = 0
+        self.id = random_id()
 
     def placeable(self, x, y, rotation):
         shape = self.shape_cache[rotation]
+        for dy in range(self.size):
+            for dx in range(self.size):
+                if shape[dy][dx] == 0:
+                    continue
 
-        for dy in range(3):
-            for dx in range(3):
                 if x + dx < 0 or x + dx > 9:
                     return False
 
-                if y + dy < 0 or y + dy > 39:
+                if y - dy < 0 or y - dy > 39:
                     return False
-
-                if shape[dy][dx] == 0:
-                    continue
 
                 if self.game.playfield[y - dy][x + dx] is not None:
                     return False
@@ -76,13 +74,13 @@ class Mino(object):
     def is_locked(self):
         return self.phase == 'locked'
 
-    @property
     def get_landing_position(self):
         max_drop = 0
 
         for i in range(40):
-            if not placeable(self.x, self.y - i, self.rotation):
+            if not self.placeable(self.x, self.y - i, self.rotation):
                 max_drop = i - 1
+                break
 
         return self.x, self.y - max(0, max_drop), self.rotation
 
@@ -97,7 +95,7 @@ class Mino(object):
         movement_success = False
         rotation_info = (0, 0)
 
-        for x, y in srs_table[rotation_code]:
+        for x, y in self.srs_table[rotation_code]:
             if self.placeable(self.x + x, self.y + y, new_rotation):
                 movement_success = True
                 self.rotation = new_rotation
@@ -140,7 +138,7 @@ class Mino(object):
 
     def drop(self, amount):
         for i in range(amount):
-            drop_one()
+            self.drop_one()
 
     def harddrop(self):
         x, y, rotation = self.get_landing_position()
@@ -173,7 +171,7 @@ class Mino(object):
 
     def is_position_mino(self, x, y):
         dx = x - self.x
-        dy = y - self.y
+        dy = self.y - y
 
         if dx < 0 or dx >= self.size:
             return False
@@ -186,5 +184,8 @@ class Mino(object):
     def update(self):
         self.tick += 1
 
-        if self.phase == 'locking' and self.tick - self.locking_start >= self.game.configuration['lock']:
+        if not self.placeable(self.x, self.y - 1, self.rotation) and \
+            self.phase == 'locking' and \
+            self.tick - self.locking_start >= self.game.configuration['lock']:
+
             self.on_locked()

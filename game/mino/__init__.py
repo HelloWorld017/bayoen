@@ -22,7 +22,7 @@ class MinoL(Mino):
     )
     name = 'l'
     srs_table = jlstz_wallkick_table
-    color = 'blue'
+    color = 'blue-400'
 
 class MinoJ(Mino):
     shape = (
@@ -32,7 +32,7 @@ class MinoJ(Mino):
     )
     name = 'j'
     srs_table = jlstz_wallkick_table
-    color = 'orange'
+    color = 'orange-400'
 
 class MinoS(Mino):
     shape = (
@@ -42,7 +42,7 @@ class MinoS(Mino):
     )
     name = 's'
     srs_table = jlstz_wallkick_table
-    color = 'green'
+    color = 'green-400'
 
 class MinoZ(Mino):
     shape = (
@@ -52,7 +52,7 @@ class MinoZ(Mino):
     )
     name = 'z'
     srs_table = jlstz_wallkick_table
-    color = 'red'
+    color = 'red-400'
 
 class MinoT(Mino):
     shape = (
@@ -62,7 +62,7 @@ class MinoT(Mino):
     )
     name = 't'
     srs_table = jlstz_wallkick_table
-    color = 'purple'
+    color = 'purple-400'
 
 class MinoO(Mino):
     shape = (
@@ -72,7 +72,7 @@ class MinoO(Mino):
         (0, 0, 0, 0)
     )
     name = 'o'
-    color = 'yellow'
+    color = 'yellow-400'
 
 class MinoI(Mino):
     shape = (
@@ -97,7 +97,12 @@ class MinoI(Mino):
     }
 
     name = 'i'
-    color = 'cyan'
+    color = 'cyan-600'
+
+class MinoGarbage(Mino):
+    shape = ((0, ), )
+    name = 'garbage'
+    color = 'grey-700'
 
 minos = [MinoO, MinoT, MinoJ, MinoL, MinoS, MinoZ, MinoI]
 mino_by_name = {mino.name: mino for mino in minos}
