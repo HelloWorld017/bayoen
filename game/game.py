@@ -1,5 +1,5 @@
 from game.mino import get_mino, minos, MinoGarbage
-from game.visualizer import Visualizer
+from game.stats import Statistics
 from random import shuffle
 from utils import event_emitter, merge_dict, now
 
@@ -59,6 +59,8 @@ class Controller(object):
 
         self.pressed_keys[key_name] = [True, self.tick]
 
+        self.game.emit('keydown', {key_name})
+
     def keyup(self, key_name):
         self.pressed_keys[key_name] = [False]
 
@@ -98,7 +100,7 @@ class Drop(object):
     def create_bag(self):
         self.current_bag = self.next_bag
         self.next_bag = minos[:]
-        shuffle(self.current_bag)
+        shuffle(self.next_bag)
 
     def new_piece(self, piece_type=None, broadcast=True):
         if piece_type is not None:
@@ -197,6 +199,7 @@ class ScoreCalc(object):
                         corners += 1
 
             if corners >= 3:
+                is_tspin = True
                 lri = piece.last_rotation_info
 
                 if lri[1] == -2 and lri[0] != 0:
@@ -248,9 +251,11 @@ class ScoreCalc(object):
             text.append("Perfect Clear")
 
         # Back to Back
+        is_b2b = False
         if last_b2b and len(clear_target) > 0:
             text.append("Back-to-Back")
             damage += 1
+            is_b2b = True
 
         # Combo Damage
         if self.combo > 0 and len(clear_target) > 0:
@@ -271,7 +276,15 @@ class ScoreCalc(object):
         if is_perfect:
             damage = 10
 
-        return damage, text
+        return damage, text, {
+            'tspin': is_tspin and not is_mini,
+            'tspin-mini': is_tspin and is_mini,
+            'back-to-back': is_b2b,
+            'perfect': is_perfect,
+            'tetris': len(clear_target) == 4,
+            'ren': self.combo,
+            'clear': len(clear_target)
+        }
 
 
 @event_emitter
@@ -283,10 +296,11 @@ class Tetris(object):
         self.drop = Drop(self)
         self.hold = Hold(self)
         self.calc = ScoreCalc(self)
-        self.visualizer = None
         self.last_clear = []
+        self.name = name
         self.opponent = None
         self.garbage_amount = 0
+        self.statistics = Statistics(self)
 
     def start_game(self):
         self.drop_piece()
@@ -323,14 +337,8 @@ class Tetris(object):
         self.drop.update()
         self.controller.update()
 
-        if self.visualizer is not None:
-            self.visualizer.update()
-
     def drop_piece(self, *args, **kwargs):
         self.drop.new_piece(*args, **kwargs)
-
-    def visualize(self, screen):
-        self.visualizer = Visualizer(self, screen)
 
     def on_locked(self):
         for y in range(self.curr_piece.size):
@@ -350,7 +358,7 @@ class Tetris(object):
             if clear:
                 clear_target.append([y, self.playfield[y]])
 
-        score, last_clear = self.calc.calc_score(clear_target)
+        score, last_clear, clear_data = self.calc.calc_score(clear_target)
         self.last_clear = last_clear
 
         for y, row in clear_target:
@@ -360,7 +368,7 @@ class Tetris(object):
         self.playfield = self.playfield + list([[None] * 10 for i in range(40 - len(self.playfield))])
 
         self.drop_piece()
-        self.emit('clear', score)
+        self.emit('clear', (score, last_clear, clear_data))
 
         if self.opponent is not None:
             self.garbage_amount -= score
