@@ -1,14 +1,14 @@
 from utils import random_id, rotate_cw
 
 
-class Tile(object):
+class Tile():
     def __init__(self, texture, mino):
         self.texture = texture
         self.mino = mino
         self.rotation = self.mino.rotation * 90
 
 
-class Mino(object):
+class Mino():
     tiles = {}
     shape = (
         (0, 0, 0),

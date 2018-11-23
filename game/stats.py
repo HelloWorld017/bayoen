@@ -1,7 +1,7 @@
 from copy import deepcopy
 from utils import now
 
-class StatWindow(object):
+class StatWindow():
     def __init__(self):
         self.dict = {}
         self.connected = []
@@ -50,7 +50,7 @@ class StatWindow(object):
         return window
 
 
-class Statistics(object):
+class Statistics():
     def __init__(self, game, reset_rate=60):
         self.last_stats = StatWindow()
         self.overall_stats = StatWindow()
@@ -69,7 +69,7 @@ class Statistics(object):
 
         time_limit = now() - 1000 * self.reset_rate
         for key, value_array in self.last_stats.dict.items():
-            self.last_stats[key] = [value for value in value_array if value[1] > time_limit]
+            self.last_stats.dict[key] = [value for value in value_array if value[1] > time_limit]
 
     def on_key(self):
         self.key_before_drops += 1
@@ -79,10 +79,10 @@ class Statistics(object):
         self.overall_stats.push('clear', clear_info['clear'])
         self.overall_stats.push('drops', 1)
         self.overall_stats.push('damage', damage)
-        self.overall_stats.push('key-per-drop', self.key_before_drops)
+        self.overall_stats.push('key-per-drop', max(1, self.key_before_drops))
         self.key_before_drops = 0
 
-    def get_stats(self, stat_name, is_overall=False, per_name=None, per_stat_offset=1):
+    def get_stats(self, stat_name, is_overall=False, per_name=None, per_stat_offset=0.01):
         stat_window = self.last_stats
 
         if is_overall:
@@ -95,12 +95,12 @@ class Statistics(object):
             if per_name == 'minute':
                 per_stat = self.tick / 3600
                 if not is_overall:
-                    per_stat = max(self.reset_rate / 60, per_stat)
+                    per_stat = min(self.reset_rate / 60, per_stat)
 
             elif per_name == 'second':
                 per_stat = self.tick / 60
                 if not is_overall:
-                    per_stat = max(self.reset_rate, per_stat)
+                    per_stat = min(self.reset_rate, per_stat)
 
             else:
                 per_stat = stat_window.get_value(per_name)

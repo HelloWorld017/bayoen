@@ -24,7 +24,7 @@ default_configuration = {
     }
 }
 
-class Controller(object):
+class Controller():
     key_left = 'left'
     key_right = 'right'
     key_spin_cw = 'spin_cw'
@@ -32,6 +32,8 @@ class Controller(object):
     key_hold = 'hold'
     key_harddrop = 'harddrop'
     key_softdrop = 'softdrop'
+
+    keys = ['left', 'right', 'spin_cw', 'spin_ccw', 'hold', 'harddrop', 'softdrop']
 
     def __init__(self, game):
         self.game = game
@@ -87,7 +89,7 @@ class Controller(object):
         return key in self.pressed_keys and self.pressed_keys[key][0]
 
 
-class Drop(object):
+class Drop():
     def __init__(self, game):
         self.game = game
         self.dropping_piece = None
@@ -143,7 +145,7 @@ class Drop(object):
 
         return slice_one + slice_two
 
-class Hold(object):
+class Hold():
     def __init__(self, game):
         self.game = game
         self.holding_piece = None
@@ -164,7 +166,7 @@ class Hold(object):
     def on_drop(self):
         self.is_last_hold = False
 
-class ScoreCalc(object):
+class ScoreCalc():
     line_clear_text = ['Single', 'Double', 'Triple', 'Tetris']
     combo_damage = [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4]
 
@@ -288,7 +290,7 @@ class ScoreCalc(object):
 
 
 @event_emitter
-class Tetris(object):
+class Tetris():
     def __init__(self, name='Player 1', configuration={}):
         self.playfield = list([[None] * 10 for i in range(40)])
         self.configuration = merge_dict(default_configuration, configuration)
@@ -336,6 +338,9 @@ class Tetris(object):
     def update(self):
         self.drop.update()
         self.controller.update()
+
+        if self.statistics is not None:
+            self.statistics.update()
 
     def drop_piece(self, *args, **kwargs):
         self.drop.new_piece(*args, **kwargs)

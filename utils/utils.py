@@ -73,3 +73,23 @@ def ease_exp_in(t, b, c, d):
 
 def ease_sin_in_out(t, b, c, d):
     return - c / 2 * (math.cos(math.pi * t / d) - 1) + b
+
+def get_soft_update_from_global_to_local(global_network, local_network):
+    pass
+
+class MaxQueue(list):
+    def __init__(self, maxlen=1000):
+        self.maxlen = maxlen
+
+    def push(self, value):
+        list.append(self, value)
+
+        if len(self.queue) > self.maxlen:
+            list.pop(self, 0)
+
+    @property
+    def average(self):
+        if len(self) == 0:
+            return 0
+
+        return sum(self) / len(self)

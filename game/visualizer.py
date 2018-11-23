@@ -28,6 +28,9 @@ def draw_circle(*args, **kwargs):
     gfxdraw.aacircle(*args, **kwargs)
     gfxdraw.filled_circle(*args, **kwargs)
 
+def draw_polygon(*args, **kwargs):
+    gfxdraw.aapolygon(*args, **kwargs)
+    gfxdraw.filled_polygon(*args, **kwargs)
 
 def draw_text(surface, position, font, text, align_right=True, color=palette['grey-100']):
     text_image = font.render(text, True, color)
@@ -61,7 +64,7 @@ def get_stat(stat, *args, **kwargs):
     return str(math.floor(number * 100) / 100)
 
 
-class AnimationLarge(object):
+class AnimationLarge():
     def __init__(self, visualizer, text, color, size=None):
         self.vis = visualizer
         self.text = text
@@ -83,7 +86,7 @@ class AnimationLarge(object):
         self.finished = False
 
     def update(self):
-        self.tick += 0.2
+        self.tick += 0.5
 
         line_length = ease(ease_exp_in, self.tick, 0, self.width + self.height, 30)
         cursor_opacity = ease(ease_sin_in_out, self.tick, 0, 255, 5, time_start=3)
@@ -92,7 +95,7 @@ class AnimationLarge(object):
         line_opacity = ease(ease_sin_in_out, self.tick, 255, 0, 15, time_start=30)
         invert_opacity = ease(ease_sin_in_out, self.tick, 255, 0, 12, time_start=48)
         invert_text_opacity = ease(ease_sin_in_out, self.tick, 255, 0, 12, time_start=60)
-        surface_opacity = ease(ease_sin_in_out, self.tick, 80, 0, 12, time_start=72)
+        surface_opacity = ease(ease_sin_in_out, self.tick, 60, 0, 12, time_start=72)
 
         # Rest
         self.surface.fill((0, 0, 0, int(surface_opacity)))
@@ -137,10 +140,10 @@ class AnimationLarge(object):
         clip_rect = (cursor_position, 0, rect.width - cursor_position, rect.height)
         self.surface.blit(self.invert_layer, layer_position, clip_rect)
 
-class AnimationSmall(object):
+class AnimationSmall():
     pass
 
-class Visualizer(object):
+class Visualizer():
     def __init__(self, game, screen, theme='default'):
         self.game = [game]
         self.screen = screen
@@ -242,9 +245,11 @@ class Visualizer(object):
 
         if new_anim is not None:
             if isinstance(new_anim, AnimationLarge):
-                self.animations = [anim for anim in self.animations if not isinstance(animation, AnimationLarge)]
+                self.animations[player_id] = [
+                    anim for anim in self.animations[player_id] if not isinstance(anim, AnimationLarge)
+                ]
 
-            self.animations.append(new_anim)
+            self.animations[player_id].append(new_anim)
 
 
     def update(self):
@@ -277,8 +282,7 @@ class Visualizer(object):
         draw.rect(self.screen, palette['cyan-400'], (x, y, holder_size, holder_size), 4)
 
         holder_clip = ((x, y), (int(x + self.mino_size * 1.5), y), (x, int(y + self.mino_size * 1.5)))
-        gfxdraw.aapolygon(self.screen, holder_clip, palette['grey-100'])
-        gfxdraw.filled_polygon(self.screen, holder_clip, palette['grey-100'])
+        draw_polygon(self.screen, holder_clip, palette['grey-100'])
 
         draw.rect(self.screen, palette['cyan-400'], (
             x + holder_size - self.mino_size * 0.25,
@@ -404,7 +408,7 @@ class Visualizer(object):
     def prepare_statistics(self):
         draw.rect(self.statistics_layer, palette['grey-850'], (0, 0, self.statistics_width, self.height))
 
-        text_x = int(self.width / 3 - 90)
+        text_x = int(self.width / 3 - 125)
         text_y = 150
         text_gap = 40
         font = self.fonts['noto-bold']
@@ -429,7 +433,7 @@ class Visualizer(object):
             (int(self.width * 2 / 3), 0)
         )
 
-        text_x = self.width - 15
+        text_x = self.width - 30
         text_y = 150
         text_gap = 40
 
@@ -441,10 +445,23 @@ class Visualizer(object):
         draw_batch(self.screen, text_x, 150, 40, self.fonts['noto-bold'],
             [apm, apl, app, att], color=palette['cyan-400'])
 
-        kpt = get_stat(stat, 'kpt')
+        kpt = get_stat(stat, 'key-per-drop')
         kps = get_stat(stat, 'key', per_name='second')
-        lpm = get_stat(stat, 'line', per_name='minute')
+        lpm = get_stat(stat, 'clear', per_name='minute')
         pps = get_stat(stat, 'drops', per_name='second')
 
         draw_batch(self.screen, text_x, 500, 40, self.fonts['noto-bold'],
             [kpt, kps, lpm, pps], color=palette['cyan-400'])
+
+
+        attack = int(stat.get_stats('damage', per_name='minute', is_overall=True) * 5)
+        speed = int(
+            stat.get_stats('drops', per_name='minute', is_overall=True) +
+            stat.get_stats('clear', per_name='minute', is_overall=True) * 1.5
+        )
+
+        draw_text(self.screen, (text_x, 40), self.fonts['noto-black64'], str(attack), color=palette['cyan-400'])
+        draw_polygon(self.screen, ((text_x + 20, 40), (text_x + 20, 60), (text_x, 40)), palette['cyan-400'])
+
+        draw_text(self.screen, (text_x, 390), self.fonts['noto-black64'], str(speed), color=palette['cyan-400'])
+        draw_polygon(self.screen, ((text_x + 20, 390), (text_x + 20, 410), (text_x, 390)), palette['cyan-400'])
