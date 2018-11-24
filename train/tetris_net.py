@@ -1,6 +1,6 @@
 from game import Controller
 from keras import backend
-from keras.models import Model, load_model
+from keras.models import Model, load_model, model_from_config
 from keras.layers import Dense, Concatenate, Flatten, Input, LSTM
 from keras.layers.convolutional import Convolution2D
 from keras.optimizers import Adam
@@ -8,6 +8,7 @@ from os import path
 from threading import Thread
 from utils import get_soft_update_from_global_to_local, merge_dict, MaxQueue
 
+import numpy as np
 import tensorflow as tf
 
 default_configuration = {
@@ -20,7 +21,6 @@ class TetrisNet():
     def __init__(self, configuration):
         self.model = None
         self.configs = merge_dict(default_configuration, configuration)
-        self.reward_window = MaxQueue(self.configs['window_size'])
 
     def generate_model(self):
         self.field_input = Input(shape=(None, 10, 40, 1))
@@ -72,10 +72,19 @@ class TetrisNet():
         self.model.reset_states()
 
     def predict(self, state):
-        pass
+        return self.model.predict(np.array([state]))[0]
 
     def get_local_network(self):
-        pass
+        config = {
+            'class_name': self.model.__class__.__name__,
+            'config': self.model.get_config()
+        }
+
+        clone = model_from_config(config)
+        clone.set_weights(self.model.get_weights())
+
+        return clone
+
 
 class Agent():
     def __init__(self, session, network, lock):
@@ -85,27 +94,46 @@ class Agent():
         self.model = network.model
         self.local_model = network.get_local_model()
         self.lock = lock
-        self.last_state = None
+
+        self.state_window = MaxQueue(self.network.configs['batch_size'])
+        self.action_window = MaxQueue(self.network.configs['batch_size'])
+        self.reward_window = MaxQueue(self.network.configs['batch_size'])
+        self.terminal_window = MaxQueue(self.network.configs['batch_size'])
+
+        self.generate_train()
 
     def run_one(self):
-        if self.last_state is None:
-            self.last_state = self.session.get_state()
-            self.session.update()
+        s = np.array(self.session.get_state())
+        _, action_policy = self.network.predict(s)
+        a = max(enumerate(action_policy), key=lambda v: v[1])[0]
+
+        self.state_window.push(s)
+        self.action_window.push(a)
+
+        self.session.act(a)
+        terminal = self.session.update()
+
+        self.terminal_window.push(terminal)
+        r = self.session.get_reward()
+        self.reward_window.push(r)
+        self.age += 1
+
+        if len(self.state_window) <= self.network.configs['batch_size']:
             return
 
-        s = self.last_state
-        a = self.network.predict(s)
-        self.session.act(a)
-        self.session.update()
-        r = self.session.get_reward()
-        s_next = self.session.get_state()
-        self.last_state = s_next
+        state_batch = np.array(self.state_window)
+        v_s, policy = self.model.predict_on_batch(state_batch)
 
-        self.lock.acquire()
-        self.network.reward_window.push(r)
-        self.lock.release()
+        last_reward = 0. if terminal else v_s[-1]
+        r_s = [last_reward]
 
-        self.age += 1
+        for r_t, t in zip(reversed(self.reward_window[:-1]), reversed(self.terminal_window[:-1])):
+            last_reward = r_t + self.network.configs['gamma'] * last_reward if not t else r_t
+
+        r_s = list(reversed(r_s))
+
+        state_batch = np.array(state_batch[:-1])
+        action_batch = np.array(self.action_window[:-1])
 
     def generate_train(self):
         updates = self.network.updates

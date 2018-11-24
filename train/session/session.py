@@ -8,7 +8,9 @@ class Session():
         self.last_damage = 0
         self.game.on('clear', lambda payload: self.last_damage = payload[0])
 
-    def act(self, action):
+    def act(self, a):
+        action = game.controller.keys[a]
+
         for key in self.game.controller.keys:
             if key in autorepeat_keys:
                 key_pressed = key in self.game.controller.pressed_keys and
@@ -34,3 +36,4 @@ class Session():
 
     def update(self):
         self.game.update()
+        return self.game.finished

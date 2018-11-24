@@ -302,6 +302,7 @@ class Tetris():
         self.name = name
         self.opponent = None
         self.garbage_amount = 0
+        self.finished = False
         self.statistics = Statistics(self)
 
     def start_game(self):
@@ -385,6 +386,7 @@ class Tetris():
 
     def game_over(self):
         self.emit('gameover')
+        self.finished = True
 
     def connect_opponent(self, game):
         self.opponent = game
