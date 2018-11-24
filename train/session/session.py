@@ -29,7 +29,12 @@ class Session():
 
     def get_state(self):
         playfield = self.game.playfield_dropping
-        return list([[0 if playfield[y][x] is not None else 1 for x in range(10)] for y in range(20)])
+        playfield = list([[0 if playfield[y][x] is not None else 1 for x in range(10)] for y in range(20)])
+
+        holdnext = self.game.holding_piece + self.game.drop.next_n_piece(5)
+        holdnext = list([piece.rotation_shape for piece in holdnext])
+
+        return playfield, holdnext
 
     def get_reward(self):
         return self.last_damage / 12
