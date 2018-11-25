@@ -75,10 +75,10 @@ def ease_sin_in_out(t, b, c, d):
     return - c / 2 * (math.cos(math.pi * t / d) - 1) + b
 
 def get_soft_update_from_global_to_local(global_network, local_network, tau=1.):
-    target_weights = local_network.trainable_weights +
+    target_weights = local_network.trainable_weights + \
         sum([layer.non_trainable_weights for layer in local_network.layers], [])
 
-    source_weights = global_network.trainable_weights +
+    source_weights = global_network.trainable_weights + \
         sum([layer.non_trainable_weights for layer in global_network.layers], [])
 
     updates = []

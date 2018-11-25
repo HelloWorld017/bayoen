@@ -3,17 +3,31 @@ from game import Tetris
 autorepeat_keys = {'left', 'right', 'softdrop'}
 
 class Session():
+    def get_state(self):
+        pass
+
+    def get_reward(self):
+        pass
+
+    def update(self):
+        pass
+
+class SessionTetris(Session):
     def __init__(self):
         self.game = Tetris()
         self.last_damage = 0
-        self.game.on('clear', lambda payload: self.last_damage = payload[0])
+
+        def clear_callback(payload):
+            self.last_damage = payload[0]
+
+        self.game.on('clear', clear_callback)
 
     def act(self, a):
         action = game.controller.keys[a]
 
         for key in self.game.controller.keys:
             if key in autorepeat_keys:
-                key_pressed = key in self.game.controller.pressed_keys and
+                key_pressed = key in self.game.controller.pressed_keys and \
                     self.game.controller.pressed_keys[key][0] == True
 
                 if key != action and key_pressed:
