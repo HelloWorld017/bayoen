@@ -1,3 +1,4 @@
+from threading import Thread
 from train import TetrisNet, TetrisNetAgent
 from train.session import SessionTetris, SessionVisualize
 
@@ -18,13 +19,13 @@ def start_train_tetris(configs={}, saved_path=None):
         agent = TetrisNetAgent(sess, network)
         agents.append(agent)
 
-    if networks.configs['vis_session']:
+    if network.configs['vis_session']:
         sess = SessionVisualize()
         agent = TetrisNetAgent(sess, network)
         agents.append(agent)
 
     for agent in agents:
-        thread = Thread(target=agent.run, args=(agent))
+        thread = Thread(target=agent.run)
         thread.daemon = True
         threads.append(thread)
         thread.start()
