@@ -1,4 +1,5 @@
 from game import Tetris
+from game.mino import get_mino
 from train.session import Session
 
 import numpy as np
@@ -7,17 +8,10 @@ autorepeat_keys = {'left', 'right', 'softdrop'}
 
 class SessionTetris(Session):
     def __init__(self):
-        self.game = Tetris()
-        self.game.start_game()
-        self.last_damage = 0
-
-        def clear_callback(payload):
-            self.last_damage = payload[0]
-
-        self.game.on('clear', clear_callback)
+        self.reset()
 
     def act(self, a):
-        action = game.controller.keys[a]
+        action = self.game.controller.keys[a]
 
         for key in self.game.controller.keys:
             if key in autorepeat_keys:
@@ -46,6 +40,9 @@ class SessionTetris(Session):
                 shape = np.zeros((4, 4))
 
             else:
+                if isinstance(piece, str):
+                    piece = get_mino(piece)
+
                 shape = piece.shape
 
             if len(shape) == 3:
@@ -56,9 +53,23 @@ class SessionTetris(Session):
         return playfield, holdnext
 
     def get_reward(self):
-        return self.last_damage / 12
+        # Max Damage: 12
+        # return self.last_damage / 12
+        return self.last_damage / 16 + (min(self.age, 200) / 800)
 
     def update(self):
+        self.age += 1
         self.last_damage = 0
         self.game.update()
         return self.game.finished
+
+    def reset(self):
+        self.game = Tetris()
+        self.game.start_game()
+        self.last_damage = 0
+        self.age = 0
+
+        def clear_callback(payload):
+            self.last_damage = payload[0]
+
+        self.game.on('clear', clear_callback)

@@ -94,7 +94,7 @@ class MaxQueue(list):
     def push(self, value):
         list.append(self, value)
 
-        if len(self.queue) > self.maxlen:
+        if len(self) > self.maxlen:
             list.pop(self, 0)
 
     @property

@@ -1,9 +1,10 @@
+from game import Controller
 from threading import Thread
 from train import TetrisNet, TetrisNetAgent
 from train.session import SessionTetris, SessionVisualize
 
 def start_train_tetris(configs={}, saved_path=None):
-    network = TetrisNet(configs)
+    network = TetrisNet(len(Controller.keys), configs)
 
     if saved_path is not None:
         network.load_model(saved_path)
@@ -11,24 +12,7 @@ def start_train_tetris(configs={}, saved_path=None):
     else:
         network.generate_model()
 
-    agents = []
-    threads = []
-
-    for session_num in range(network.configs['sessions']):
-        sess = SessionTetris()
-        agent = TetrisNetAgent(sess, network)
-        agents.append(agent)
-
-    if network.configs['vis_session']:
-        sess = SessionVisualize()
-        agent = TetrisNetAgent(sess, network)
-        agents.append(agent)
-
-    for agent in agents:
-        thread = Thread(target=agent.run)
-        thread.daemon = True
-        threads.append(thread)
-        thread.start()
-
-    for thread in threads:
-        thread.join()
+    # TODO multi-agent ?
+    sess = SessionVisualize() if network.configs['visualize'] else SessionTetris()
+    agent = TetrisNetAgent(sess, network)
+    agent.run()

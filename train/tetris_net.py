@@ -1,20 +1,21 @@
-from game import Controller
 from keras import backend
-from keras.models import Model, load_model, model_from_config
-from keras.layers import Dense, Concatenate, Flatten, Input, LSTM, RepeatVector
+from keras.models import Model, clone_model, load_model
+from keras.layers import Dense, Concatenate, Flatten, Input, LSTM, Reshape, RepeatVector
 from keras.layers.convolutional import Convolution2D
 from keras.optimizers import Adam
 from os import path
 from threading import Thread
 from utils import get_soft_update_from_global_to_local, merge_dict, MaxQueue
 
+import random
 import numpy as np
 import tensorflow as tf
 
 default_configuration = {
     'lr': 0.001,
     'window_size': 20000,
-    'batch_window_size': 32,
+    'batch_window_size': 128,
+    'batch_size': 1,
     'gamma': 0.7,
     'alpha': 0.9,
     'epsilon': 0.7,
@@ -23,30 +24,31 @@ default_configuration = {
     'clip_epsilon': 0.2,
     'entropy_loss': 1e-3,
     'epochs': 1000000,
-    'sessions': 1,
-    'vis_session': False
+    'visualize': False
 }
 
 
 class TetrisNet():
-    def __init__(self, configuration):
+    def __init__(self, actions, configuration):
         self.model = None
         self.configs = merge_dict(default_configuration, configuration)
+        self.actions = actions
 
     def generate_model(self):
-        self.old_policy = Input(batch_shape=(self.configs['batch_window_size'], len(Controller.keys)))
-        self.advantage = Input(batch_shape=(self.configs['batch_window_size'], 1))
+        self.old_policy = Input(batch_shape=(self.configs['batch_size'], self.actions), name='input_old')
+        self.advantage = Input(batch_shape=(self.configs['batch_size'], 1), name='input_advantage')
 
-        self.field_input = Input(batch_shape=(self.configs['batch_window_size'], 10, 40, 1))
-        self.field_conv1 = Convolution2D(10, 6, strides=(2, 2), activation='relu', name='field_conv1')(self.field_input)
-        self.field_conv2 = Convolution2D(16, 3, strides=(3, 3), activation='relu', name='field_conv2')(self.field_conv1)
+        self.field_input = Input(batch_shape=(self.configs['batch_size'], 20, 10), name='input_field')
+        self.field_reshape1 = Reshape((20, 10, 1))(self.field_input)
+        self.field_conv1 = Convolution2D(10, 6, strides=(2, 2), activation='relu')(self.field_reshape1)
+        self.field_conv2 = Convolution2D(16, 3, strides=(3, 3), activation='relu')(self.field_conv1)
         self.field_flatten = Flatten()(self.field_conv2)
-        self.field_reshape = RepeatVector(1)(self.field_flatten)
-        self.field_lstm = LSTM(32, activation='tanh', stateful=True)(self.field_reshape)
+        self.field_reshape2 = RepeatVector(1)(self.field_flatten)
+        self.field_lstm = LSTM(32, activation='tanh', stateful=True)(self.field_reshape2)
 
-        self.holdnext_input = Input(batch_shape=(self.configs['batch_window_size'], 4, 4, 6))
+        self.holdnext_input = Input(batch_shape=(self.configs['batch_size'], 6, 4, 4), name='input_holdnext')
         self.holdnext_conv1 = Convolution2D(
-                16, 4, strides=(1, 1), activation='relu', name='holdnext_conv'
+                16, 4, strides=(1, 1), activation='relu', data_format='channels_first'
             )(self.holdnext_input)
         self.holdnext_flatten = Flatten()(self.holdnext_conv1)
 
@@ -57,7 +59,7 @@ class TetrisNet():
         self.lstm_reshape = RepeatVector(1)(self.dense2)
         self.lstm = LSTM(64, activation='tanh', stateful=True)(self.lstm_reshape)
 
-        self.policy_output = Dense(len(Controller.keys), activation='softmax', name='policy')(self.lstm)
+        self.policy_output = Dense(self.actions, activation='softmax', name='policy')(self.lstm)
         self.value_output = Dense(1, name='value')(self.lstm)
 
         self.model = Model(
@@ -65,46 +67,47 @@ class TetrisNet():
             outputs=[self.policy_output, self.value_output]
         )
 
+        self.compile_model()
+
+    def compile_model(self):
         self.model.compile(
             optimizer=Adam(lr=self.configs['lr']),
             loss=[
-                self.get_actor_loss(),
+                self.get_actor_loss(self.model.inputs[2], self.model.inputs[3]),
                 self.get_critic_loss()
             ]
         )
+
+        self.model._make_predict_function()
+        self.model._make_train_function()
 
     def load_model(self, model_name):
         self.model = load_model(path.join('train', 'models', model_name))
 
     def predict(self, state_playfield, state_holdnext):
-        return self.model.predict([
+        prediction = self.model.predict([
             np.array([state_playfield]),
             np.array([state_holdnext]),
-            np.zeros((1, 1)),
-            np.zeros((1, len(Controller.keys)))
-        ])[0]
+            np.zeros((1, self.actions)),
+            np.zeros((1, 1))
+        ])
 
-    def split_state_batch(self, state_batch):
-        playfield_batch, holdnext_batch = zip(*state_batch)
-        return np.array(playfield_batch), np.array(holdnext_batch)
+        return prediction[0][0], prediction[1][0]
 
-    def predict_on_batch(self, state_batch):
-        return self.model.predict_on_batch(list(self.split_state_batch(state_batch)))
-
-    def get_actor_loss(self):
+    def get_actor_loss(self, old_policy, advantage):
         def loss(y_true, y_pred):
             prob = y_true * y_pred
-            old_prob = y_true * self.old_policy
+            old_prob = y_true * old_policy
             r = prob / (old_prob + 1e-10)
 
             return -backend.mean(
                 backend.minimum(
-                    r * self.advantage,
+                    r * advantage,
                     backend.clip(
                         r,
                         min_value = 1 - self.configs['clip_epsilon'],
                         max_value = 1 + self.configs['clip_epsilon']
-                    ) * self.advantage,
+                    ) * advantage,
                 ) +
                 self.configs['entropy_loss'] * -(prob * backend.log(prob + 1e-10))
             )
@@ -118,16 +121,10 @@ class TetrisNet():
         return loss
 
     def get_local_network(self):
-        config = {
-            'class_name': self.model.__class__.__name__,
-            'config': self.model.get_config()
-        }
-
-        clone = model_from_config(config)
-        clone.set_weights(self.model.get_weights())
-
-        local_network = TetrisNet(self.configs)
-        local_network.model = clone
+        local_network = TetrisNet(self.actions, self.configs)
+        local_network.model = clone_model(self.model)
+        local_network.model.set_weights(self.model.get_weights())
+        local_network.compile_model()
 
         return local_network
 
@@ -143,50 +140,53 @@ class TetrisNetAgent():
 
         self.epsilon = self.network.configs['epsilon']
 
-        self.state_window = MaxQueue(self.network.configs['batch_window_size'])
+        self.state_field_window = MaxQueue(self.network.configs['batch_window_size'])
+        self.state_holdnext_window = MaxQueue(self.network.configs['batch_window_size'])
         self.action_window = MaxQueue(self.network.configs['batch_window_size'])
         self.prediction_window = MaxQueue(self.network.configs['batch_window_size'])
         self.local_prediction_window = MaxQueue(self.network.configs['batch_window_size'])
         self.local_value_window = MaxQueue(self.network.configs['batch_window_size'])
         self.reward_window = MaxQueue(self.network.configs['batch_window_size'])
 
-    def clear(self):
-        self.state_window.clear()
+    def clear(self, terminal):
+        self.state_field_window.clear()
+        self.state_holdnext_window.clear()
         self.action_window.clear()
         self.prediction_window.clear()
         self.local_prediction_window.clear()
         self.local_value_window.clear()
         self.reward_window.clear()
 
-    def run(self):
-        log_step = self.network.configs['epochs'] / 500
+        if terminal:
+            self.model.reset_states()
+            self.local_model.reset_states()
+            self.session.reset()
 
+    def run(self):
         for epoch in range(self.network.configs['epochs']):
             self.run_one()
 
-            if epoch % log_step == 0:
-                print("Epoch: %d, Average Reward: %d" % (epoch, self.reward_window.average))
-
     def run_one(self):
-        state = self.session.get_state()
-        self.state_window.push(state)
+        state_playfield, state_holdnext = self.session.get_state()
+        self.state_field_window.push(state_playfield)
+        self.state_holdnext_window.push(state_holdnext)
 
-        _, action_policy = self.network.predict(s[0], s[1])
+        action_policy, _ = self.network.predict(state_playfield, state_holdnext)
         self.prediction_window.push(action_policy)
 
-        value, local_prediction = self.local_network.predict(s[0], s[1])
+        local_prediction, value = self.local_network.predict(state_playfield, state_holdnext)
         self.local_prediction_window.push(local_prediction)
         self.local_value_window.push(value)
 
         if random.random() > self.epsilon:
-            action = random.randrange(0, len(Controller.keys))
+            action = random.randrange(0, self.network.actions)
 
         else:
-            action = np.random.choice(len(Controller.keys), p = action_policy)
+            action = np.random.choice(self.network.actions, p = action_policy)
 
         self.session.act(action)
 
-        action_batch = np.zeros(shape=(len(Controller.keys), ))
+        action_batch = np.zeros(shape=(self.network.actions, ))
         action_batch[action] = 1
         self.action_window.push(action_batch)
 
@@ -199,12 +199,13 @@ class TetrisNetAgent():
         if self.epsilon > self.network.configs['epsilon_min']:
             self.epsilon -= self.network.configs['epsilon_decay']
 
-        if terminal or len(self.reward_window) >= self.network.configs['batch_window_size']:
-            self.train_one()
-            self.clear()
+        if terminal or (len(self.reward_window) >= self.network.configs['batch_window_size']):
+            self.train_one(terminal)
+            self.clear(terminal)
 
-    def train_one(self):
-        batch_state = np.array(self.state_window)
+    def train_one(self, terminal):
+        batch_state_field = np.array(self.state_field_window)
+        batch_state_holdnext = np.array(self.state_holdnext_window)
         batch_action = np.array(self.action_window)
         batch_old_policy = np.array(self.prediction_window)
         batch_policy = np.array(self.local_prediction_window)
@@ -218,13 +219,19 @@ class TetrisNetAgent():
             last_reward = r_t + self.network.configs['gamma'] * last_reward
             discounted_reward.append(last_reward)
 
-        batch_advantage = np.array(discounted_reward.reverse()) - batch_value
-        batch_discounted_reward = np.array(discounted_reward)
+        discounted_reward.reverse()
+        batch_discounted_reward = np.reshape(np.array(discounted_reward), (-1, 1))
+        batch_advantage = batch_discounted_reward - batch_value
 
-        self.network.fit(
-            x = [batch_s, batch_advantage, batch_old_policy],
-            y = [batch_action, batch_discounted_reward]
+        print("Epoch: %d, Average Reward: %f" % (self.age, self.reward_window.average))
+
+        self.local_model.fit(
+            x = [batch_state_field, batch_state_holdnext, batch_old_policy, batch_advantage],
+            y = [batch_action, batch_discounted_reward],
+            batch_size=self.network.configs['batch_size']
         )
+
+        self.update_global()
 
         if terminal:
             self.model.reset_states()
